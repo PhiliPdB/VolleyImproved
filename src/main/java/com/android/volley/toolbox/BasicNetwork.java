@@ -20,7 +20,6 @@ import android.os.SystemClock;
 
 import com.android.volley.AuthFailureError;
 import com.android.volley.Cache;
-import com.android.volley.Cache.Entry;
 import com.android.volley.Network;
 import com.android.volley.NetworkError;
 import com.android.volley.NetworkResponse;
@@ -135,7 +134,14 @@ public class BasicNetwork implements Network {
                 if (httpResponse != null) {
                     statusCode = httpResponse.getStatusLine().getStatusCode();
                 } else {
-                    throw new NoConnectionError(e);
+                    // Load from cache if cache exists
+                    if (request.getCacheEntry() != null && request.getCacheEntry().data != null) {
+                        return new NetworkResponse(HttpStatus.SC_NOT_MODIFIED,
+                                request.getCacheEntry().data, responseHeaders, true,
+                                SystemClock.elapsedRealtime() - requestStart);
+                    } else {
+                        throw new NoConnectionError(e);
+                    }
                 }
                 VolleyLog.e("Unexpected response code %d for %s", statusCode, request.getUrl());
                 if (responseContents != null) {
