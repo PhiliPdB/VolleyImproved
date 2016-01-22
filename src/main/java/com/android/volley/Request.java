@@ -20,7 +20,6 @@ import android.net.TrafficStats;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 import android.text.TextUtils;
 
 import com.android.volley.VolleyLog.MarkerLog;
@@ -80,6 +79,9 @@ public abstract class Request<T> implements Comparable<Request<T>> {
 
     /** The request queue this request is associated with. */
     private RequestQueue mRequestQueue;
+
+    /** Whether of not skip existing cache. */
+    private boolean mSkipCache = false;
 
     /** Whether or not responses to this request should be cached. */
     private boolean mShouldCache = true;
@@ -454,6 +456,23 @@ public abstract class Request<T> implements Comparable<Request<T>> {
         } catch (UnsupportedEncodingException uee) {
             throw new RuntimeException("Encoding not supported: " + paramsEncoding, uee);
         }
+    }
+
+    /**
+     * Set whether or not this request should look for cache.
+     *
+     * @return This Request object to allow for chaining.
+     */
+    public final Request<?> setSkipCache(boolean skipCache) {
+        mSkipCache = skipCache;
+        return this;
+    }
+
+    /**
+     * Returns true if this request should skip cache
+     */
+    public final boolean skipCache() {
+        return mSkipCache;
     }
 
     /**
