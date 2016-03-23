@@ -20,6 +20,8 @@ import android.os.SystemClock;
 
 import com.android.volley.AuthFailureError;
 import com.android.volley.Cache;
+import com.android.volley.Cache.Entry;
+import com.android.volley.ClientError;
 import com.android.volley.Network;
 import com.android.volley.NetworkError;
 import com.android.volley.NetworkResponse;
@@ -99,8 +101,20 @@ public class BasicNetwork implements Network {
                 responseHeaders = convertHeaders(httpResponse.getAllHeaders());
                 // Handle cache validation.
                 if (statusCode == HttpStatus.SC_NOT_MODIFIED) {
+                    Entry entry = request.getCacheEntry();
+
+                    if (entry == null) {
+                        return new NetworkResponse(HttpStatus.SC_NOT_MODIFIED,
+                                null, responseHeaders, true,
+                                SystemClock.elapsedRealtime() - requestStart);
+                    }
+                    // A HTTP 304 response does not have all header fields. We
+                    // have to use the header fields from the cache entry plus
+                    // the new ones from the response.
+                    // http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3.5
+                    entry.responseHeaders.putAll(responseHeaders);
                     return new NetworkResponse(HttpStatus.SC_NOT_MODIFIED,
-                            request.getCacheEntry().data, responseHeaders, true,
+                            entry.data, entry.responseHeaders, true,
                             SystemClock.elapsedRealtime() - requestStart);
                 }
 
@@ -129,8 +143,7 @@ public class BasicNetwork implements Network {
             } catch (MalformedURLException e) {
                 throw new RuntimeException("Bad URL " + request.getUrl(), e);
             } catch (IOException e) {
-                int statusCode = 0;
-                NetworkResponse networkResponse = null;
+                int statusCode;
                 if (httpResponse != null) {
                     statusCode = httpResponse.getStatusLine().getStatusCode();
                 } else {
@@ -144,6 +157,7 @@ public class BasicNetwork implements Network {
                     }
                 }
                 VolleyLog.e("Unexpected response code %d for %s", statusCode, request.getUrl());
+                NetworkResponse networkResponse;
                 if (responseContents != null) {
                     networkResponse = new NetworkResponse(statusCode, responseContents,
                             responseHeaders, false, SystemClock.elapsedRealtime() - requestStart);
@@ -151,12 +165,22 @@ public class BasicNetwork implements Network {
                             statusCode == HttpStatus.SC_FORBIDDEN) {
                         attemptRetryOnException("auth",
                                 request, new AuthFailureError(networkResponse));
+                    } else if (statusCode >= 400 && statusCode <= 499) {
+                        // Don't retry other client errors.
+                        throw new ClientError(networkResponse);
+                    } else if (statusCode >= 500 && statusCode <= 599) {
+                        if (request.shouldRetryServerErrors()) {
+                            attemptRetryOnException("server",
+                                    request, new ServerError(networkResponse));
+                        } else {
+                            throw new ServerError(networkResponse);
+                        }
                     } else {
-                        // TODO: Only throw ServerError for 5xx status codes.
+                        // 3xx? No reason to retry.
                         throw new ServerError(networkResponse);
                     }
                 } else {
-                    throw new NetworkError(networkResponse);
+                    attemptRetryOnException("network", request, new NetworkError());
                 }
             }
         }
@@ -251,8 +275,8 @@ public class BasicNetwork implements Network {
      */
     protected static Map<String, String> convertHeaders(Header[] headers) {
         Map<String, String> result = new TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER);
-        for (int i = 0; i < headers.length; i++) {
-            result.put(headers[i].getName(), headers[i].getValue());
+        for (Header header : headers) {
+            result.put(header.getName(), header.getValue());
         }
         return result;
     }
