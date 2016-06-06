@@ -172,6 +172,11 @@ public class BasicNetwork implements Network {
                         if (request.shouldRetryServerErrors()) {
                             attemptRetryOnException("server",
                                     request, new ServerError(networkResponse));
+                        } else if (request.getCacheEntry() != null && request.getCacheEntry().data != null) {
+                            // Return cache
+                            return new NetworkResponse(HttpStatus.SC_NOT_MODIFIED,
+                                    request.getCacheEntry().data, responseHeaders, true,
+                                    SystemClock.elapsedRealtime() - requestStart);
                         } else {
                             throw new ServerError(networkResponse);
                         }
